@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fuel Route Planner</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  body { margin:0; font:14px/1.4 system-ui, sans-serif; display:flex; height:100vh; }
+  #side { width:340px; padding:14px; overflow:auto; border-right:1px solid #ddd; box-sizing:border-box; }
+  #map { flex:1; }
+  input, button { width:100%; padding:8px; margin:4px 0; box-sizing:border-box; font:inherit; }
+  button { background:#0b5; color:#fff; border:0; border-radius:4px; cursor:pointer; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; }
+  td, th { padding:4px 2px; border-bottom:1px solid #eee; text-align:left; font-size:12px; }
+  .total { font-size:20px; font-weight:600; margin:8px 0 2px; }
+  .err { color:#b00; }
+</style>
+</head>
+<body>
+<div id="side">
+  <h3 style="margin-top:0">Fuel Route Planner</h3>
+  <input id="start" value="Los Angeles, CA" placeholder='Start, e.g. "Dallas, TX"'>
+  <input id="finish" value="New York, NY" placeholder="Finish">
+  <button id="go">Plan route</button>
+  <div id="out"></div>
+</div>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map').setView([39, -98], 4);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {maxZoom: 18, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
+let layer = L.layerGroup().addTo(map);
+const out = document.getElementById('out');
+
+document.getElementById('go').onclick = async () => {
+  out.textContent = 'Planning…';
+  const r = await fetch('/api/route/', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({start: start.value, finish: finish.value})});
+  const d = await r.json();
+  if (!r.ok) { out.innerHTML = '<p class="err">' + (d.error || JSON.stringify(d)) + '</p>'; return; }
+  layer.clearLayers();
+  const line = L.geoJSON(d.route.geometry, {style: {color:'#06c', weight:4}}).addTo(layer);
+  map.fitBounds(line.getBounds());
+  L.marker([d.start.lat, d.start.lng]).bindPopup('Start: ' + d.start.label).addTo(layer);
+  L.marker([d.finish.lat, d.finish.lng]).bindPopup('Finish: ' + d.finish.label).addTo(layer);
+  const f = d.fuel_plan;
+  f.stops.forEach((s, i) => L.circleMarker([s.lat, s.lng], {radius:8, color:'#c30', fillOpacity:.9})
+    .bindPopup(`<b>${i+1}. ${s.name}</b><br>${s.city}, ${s.state}<br>$${s.price_per_gallon}/gal · ` +
+               `${s.gallons_purchased} gal = $${s.cost_usd}<br>mile ${s.mile_marker}`).addTo(layer));
+  out.innerHTML = `<div class="total">$${f.total_fuel_cost_usd.toFixed(2)}</div>
+    ${d.route.distance_miles} mi · ${f.total_gallons} gal · ${f.stops.length} fuel stop(s)<br>
+    <small>${d.meta.elapsed_ms} ms · ${d.meta.external_api_calls} external call(s)${d.meta.cached ? ' · cached' : ''}</small>
+    <table><tr><th>#</th><th>Stop</th><th>Mile</th><th>$/gal</th><th>Gal</th><th>Cost</th></tr>` +
+    (f.departure_fill ? `<tr><td>0</td><td>Departure</td><td>0</td><td>${f.departure_fill.price_per_gallon}</td>
+       <td>${f.departure_fill.gallons}</td><td>$${f.departure_fill.cost_usd}</td></tr>` : '') +
+    f.stops.map((s, i) => `<tr><td>${i+1}</td><td>${s.name}<br><small>${s.city}, ${s.state}</small></td>
+      <td>${s.mile_marker}</td><td>${s.price_per_gallon}</td><td>${s.gallons_purchased}</td>
+      <td>$${s.cost_usd}</td></tr>`).join('') + '</table>';
+};
+</script>
+</body>
+</html>

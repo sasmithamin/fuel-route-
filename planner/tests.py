@@ -1,7 +1,14 @@
-import numpy as np
-from django.test import TestCase
+from unittest import mock
 
+import numpy as np
+from django.core.cache import cache
+from django.test import TestCase
+from rest_framework.test import APIClient
+
+from planner.models import City, Station
+from planner.services import stations as stations_mod
 from planner.services.optimizer import Candidate, NoFeasibleRoute, plan_fuel_stops
+from planner.services.routing import Route
 
 
 def C(mile, price):
@@ -64,3 +71,55 @@ class OptimizerTests(TestCase):
     def test_gap_larger_than_range_raises(self):
         with self.assertRaises(NoFeasibleRoute):
             plan_fuel_stops([C(10, 3.0), C(700, 3.0)], total_miles=900)
+
+
+class ApiTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        City.objects.create(key="alpha", name="Alpha", state="TX", lat=32.0, lng=-100.0)
+        City.objects.create(key="omega", name="Omega", state="TX", lat=32.0, lng=-90.0)
+        # stations every ~0.5 degree (~29 mi) along lat 32 with varying prices, plus one far off-route
+        for i, lng in enumerate(np.arange(-100, -90.01, 0.5)):
+            Station.objects.create(opis_id=i, name=f"S{i}", address="I-20", city="X", state="TX",
+                                   price=3.0 + (i % 5) * 0.2, lat=32.0, lng=float(lng))
+        Station.objects.create(opis_id=999, name="FAR", address="", city="Y", state="TX",
+                               price=1.0, lat=36.0, lng=-95.0)
+
+    def setUp(self):
+        cache.clear()
+        stations_mod.reset_index()
+        lngs = np.linspace(-100, -90, 400)
+        self.route = Route(lngs, np.full_like(lngs, 32.0), distance_miles=585.0, duration_seconds=36000)
+
+    def test_end_to_end_single_routing_call(self):
+        with mock.patch("planner.services.planner.fetch_route", return_value=(self.route, 1)) as fr:
+            r = APIClient().post("/api/route/", {"start": "Alpha, TX", "finish": "Omega, Texas"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        d = r.json()
+        fr.assert_called_once()
+        self.assertEqual(d["meta"]["external_api_calls"], 1)
+        fp = d["fuel_plan"]
+        self.assertAlmostEqual(fp["total_gallons"], 58.5, places=1)      # 585 mi / 10 mpg
+        self.assertTrue(all(s["name"] != "FAR" for s in fp["stops"]))     # off-corridor excluded
+        total = fp["total_fuel_cost_usd"]
+        parts = sum(s["cost_usd"] for s in fp["stops"]) + (fp["departure_fill"] or {}).get("cost_usd", 0)
+        self.assertAlmostEqual(total, parts, delta=0.05)
+        self.assertEqual(d["route"]["geometry"]["type"], "LineString")
+
+    def test_second_identical_request_is_cached(self):
+        with mock.patch("planner.services.planner.fetch_route", return_value=(self.route, 1)) as fr:
+            c = APIClient()
+            c.post("/api/route/", {"start": "Alpha, TX", "finish": "Omega, TX"}, format="json")
+            r = c.post("/api/route/", {"start": "Alpha, TX", "finish": "Omega, TX"}, format="json")
+        self.assertEqual(fr.call_count, 1)
+        self.assertTrue(r.json()["meta"]["cached"])
+        self.assertEqual(r.json()["meta"]["external_api_calls"], 0)
+
+    def test_coordinates_input_and_validation_errors(self):
+        c = APIClient()
+        self.assertEqual(c.post("/api/route/", {"start": "x"}, format="json").status_code, 400)
+        r = c.post("/api/route/", {"start": "51.5,-0.12", "finish": "Omega, TX"}, format="json")
+        self.assertEqual(r.status_code, 400)                              # London: outside USA
+        with mock.patch("planner.services.planner.fetch_route", return_value=(self.route, 1)):
+            r = c.post("/api/route/", {"start": "32.0,-100.0", "finish": "32.0,-90.0"}, format="json")
+        self.assertEqual(r.status_code, 200)
