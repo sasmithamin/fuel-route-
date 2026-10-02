@@ -69,3 +69,8 @@ print("unmatched:", stations["lat"].isna().sum())
 stations = stations.dropna(subset=["lat", "lng"])
 print(len(stations), "stations with coordinates")
 print(stations[["name", "city", "state", "lat", "lng"]].head(3).to_string())
+
+stations["price"] = stations["price"].round(4)
+stations.to_csv(DATA / "stations_geocoded.csv", index=False)
+cities[["name", "state", "lat", "lng", "key"]].to_csv(DATA / "us_cities.csv", index=False)
+print("wrote data/stations_geocoded.csv and data/us_cities.csv")
