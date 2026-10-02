@@ -36,3 +36,9 @@ def get_index():
             lat=np.array(cols[6], dtype=float), lng=np.array(cols[7], dtype=float),
         )
     return _index
+
+
+def reset_index():
+    """Reset cached station index (used in test setup)."""
+    global _index
+    _index = None

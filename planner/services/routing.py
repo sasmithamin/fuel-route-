@@ -18,7 +18,14 @@ class Route:
     lng: np.ndarray
     lat: np.ndarray
     distance_miles: float
-    duration_hours: float
+    duration_hours: float = 0.0
+    duration_seconds: float = 0.0
+
+    def __post_init__(self):
+        if self.duration_seconds and not self.duration_hours:
+            self.duration_hours = self.duration_seconds / 3600.0
+        elif self.duration_hours and not self.duration_seconds:
+            self.duration_seconds = self.duration_hours * 3600.0
 
 
 def fetch_route(start, finish):

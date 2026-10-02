@@ -1,3 +1,5 @@
+from django.shortcuts import render
+from django.views import View
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -6,6 +8,11 @@ from .serializers import RouteRequestSerializer
 from .services.locations import LocationError
 from .services.planner import NoFeasiblePlan, plan_trip
 from .services.routing import RoutingError
+
+
+class MapView(View):
+    def get(self, request):
+        return render(request, "planner/map.html")
 
 
 class RouteView(APIView):

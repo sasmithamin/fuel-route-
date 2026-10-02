@@ -42,7 +42,8 @@ class Purchase:
 
 
 def plan_fuel_stops(candidates: Sequence[Candidate], total_miles: float,
-                    max_range: float = 500.0, mpg: float = 10.0) -> List[Purchase]:
+                    max_range: float = 500.0, mpg: float = 10.0,
+                    min_saving: float = 0.0) -> List[Purchase]:
     stations = sorted((c for c in candidates if 0 <= c.mile <= total_miles), key=lambda c: c.mile)
     if total_miles <= 0:
         return []
@@ -60,7 +61,7 @@ def plan_fuel_stops(candidates: Sequence[Candidate], total_miles: float,
         cheapest_in_range: Optional[int] = None
         j = i + 1
         while j <= last and nodes[j].mile - cur.mile <= max_range + EPS:
-            if nodes[j].price < cur.price - EPS:
+            if nodes[j].price < cur.price - min_saving - EPS:
                 cheaper = j
                 break
             if cheapest_in_range is None or nodes[j].price <= nodes[cheapest_in_range].price + EPS:

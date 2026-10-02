@@ -46,6 +46,7 @@ FUEL = {
     "CORRIDOR_MILES": 10,        # a station counts as "on route" within this distance
     "RESAMPLE_STEP_MILES": 1.0,  # route is densified to this spacing for matching
     "OUTPUT_THIN_MILES": 0.25,   # geometry returned to the client is thinned to this spacing
+    "MIN_SAVING_PER_GALLON": 0.0,# optional: minimum price difference ($/gal) to trigger a stop
 }
 
 # ---- External services (only the routing call is required) ----------------

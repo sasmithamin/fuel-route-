@@ -11,7 +11,21 @@ from planner.models import City
 LAT_MIN, LAT_MAX, LNG_MIN, LNG_MAX = 24.4, 49.5, -125.0, -66.9
 
 COORD_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
-CITY_ST_RE = re.compile(r"^\s*([^,]+?)\s*,\s*([A-Za-z]{2})\s*$")
+STATE_NAMES = {
+    "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR", "CALIFORNIA": "CA",
+    "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE", "FLORIDA": "FL", "GEORGIA": "GA",
+    "HAWAII": "HI", "IDAHO": "ID", "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA",
+    "KANSAS": "KS", "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD",
+    "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN", "MISSISSIPPI": "MS", "MISSOURI": "MO",
+    "MONTANA": "MT", "NEBRASKA": "NE", "NEVADA": "NV", "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ",
+    "NEW MEXICO": "NM", "NEW YORK": "NY", "NORTH CAROLINA": "NC", "NORTH DAKOTA": "ND", "OHIO": "OH",
+    "OKLAHOMA": "OK", "OREGON": "OR", "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI", "SOUTH CAROLINA": "SC",
+    "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX", "UTAH": "UT", "VERMONT": "VT",
+    "VIRGINIA": "VA", "WASHINGTON": "WA", "WEST VIRGINIA": "WV", "WISCONSIN": "WI", "WYOMING": "WY",
+    "DISTRICT OF COLUMBIA": "DC"
+}
+
+CITY_ST_RE = re.compile(r"^\s*([^,]+?)\s*,\s*([A-Za-z\s]{2,})\s*$")
 
 _session = requests.Session()
 
@@ -80,14 +94,17 @@ def resolve_location(text):
         _check_usa(lat, lng, text)
         return Location(lat, lng, f"{lat:.4f}, {lng:.4f}", "coords"), 0
 
-    # 2. "City, ST": local City table
+    # 2. "City, ST" or "City, State": local City table
     m = CITY_ST_RE.match(text)
     if m:
-        city = City.objects.filter(key=norm_city(m.group(1)),
-                                   state=m.group(2).upper()).first()
-        if city:
-            return Location(city.lat, city.lng,
-                            f"{city.name}, {city.state}", "gazetteer"), 0
+        st_raw = m.group(2).strip().upper()
+        st_code = STATE_NAMES.get(st_raw, st_raw if len(st_raw) == 2 else None)
+        if st_code:
+            city = City.objects.filter(key=norm_city(m.group(1)),
+                                       state=st_code).first()
+            if city:
+                return Location(city.lat, city.lng,
+                                f"{city.name}, {city.state}", "gazetteer"), 0
 
     # 3. fallback: Nominatim (cached)
     loc, calls = _nominatim(text)
